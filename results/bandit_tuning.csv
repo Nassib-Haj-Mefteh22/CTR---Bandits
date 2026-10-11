@@ -1,0 +1,10 @@
+policy,param,value,final_regret,chosen
+eps-greedy,eps,0.02,3541.0,False
+eps-greedy,eps,0.05,2546.3,True
+eps-greedy,eps,0.1,3453.0,False
+eps-greedy,eps,0.2,3122.2,False
+linucb,alpha,0.01,1954.6,False
+linucb,alpha,0.02,1823.8,False
+linucb,alpha,0.05,2247.4,False
+linucb,alpha,0.1,1678.8,True
+linucb,alpha,0.25,2122.1,False

@@ -1,0 +1,13 @@
+# data, weights, caches
+data/
+*.pt
+*.npy
+
+# python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+desktop.ini

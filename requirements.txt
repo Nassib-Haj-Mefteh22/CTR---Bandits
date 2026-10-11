@@ -1,0 +1,9 @@
+# Direct dependencies only, pinned to the versions tested on Python 3.12 (CPU).
+# Install: .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+torch==2.14.1
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+matplotlib==3.11.2
+pytest==9.1.1
+ruff==0.16.10
