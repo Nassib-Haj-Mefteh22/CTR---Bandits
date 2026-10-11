@@ -1,14 +1,3 @@
-"""Run every policy on the Criteo bandit: tune on seed 0, report on seeds 1-5.
-
-Why a separate tuning seed: alpha (LinUCB) and eps (eps-greedy) are hyperparameters; picking them
-on the seeds we report would make the reported regret optimistic, the bandit version of tuning on
-test. Seed 0 gets its own contexts and coin flips, so the choice transfers but does not leak.
-
-Outputs: results/bandit_tuning.csv (seed 0 sweep), results/bandit_regret.csv (cumulative regret
-every 1000 rounds per policy and seed, incl. the best-fixed-arm reference).
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe -m bandit.run
-"""
-
 import argparse
 import csv
 import time
@@ -20,28 +9,22 @@ from bandit.policies import EpsilonGreedy, LinearTS, LinUCB, NeuralLinear, Rando
 from bandit.simulator import BanditEnv, CriteoBanditFactory
 from ctr.config import RESULTS_DIR
 
-# 20k was too short: with ~2k noisy pulls per arm even a full-information linear fit loses to the
-# best fixed arm (Step 6 diagnostic); LinUCB overtakes it in total around 100k rounds.
 HORIZON = 100_000
 TUNE_SEED = 0
 EVAL_SEEDS = [1, 2, 3, 4, 5]
 LOG_EVERY = 1000
-# name -> (factory(n_arms, dim, seed, **param), hyperparameter name, grid swept on TUNE_SEED)
 POLICIES: dict[str, tuple[Callable, str | None, list[float]]] = {
     "random": (lambda k, d, s: RandomPolicy(k, s), None, []),
     "eps-greedy": (lambda k, d, s, eps: EpsilonGreedy(k, s, eps=eps), "eps",
                    [0.02, 0.05, 0.1, 0.2]),
     "linucb": (lambda k, d, s, alpha: LinUCB(k, d, s, alpha=alpha), "alpha",
                [0.01, 0.02, 0.05, 0.1, 0.25]),
-    # Thompson policies: no exploration knob to tune (the posterior sets the exploration);
-    # prior and network settings are fixed in policies.py, not chosen on these runs.
     "linear-ts": (lambda k, d, s: LinearTS(k, d, s), None, []),
     "neural-linear": (lambda k, d, s: NeuralLinear(k, d, s), None, []),
 }
 
 
 def run_policy(env: BanditEnv, policy) -> np.ndarray:
-    """Play all T rounds; returns cumulative pseudo-regret [T]."""
     regret = np.empty(env.horizon)
     for t in range(env.horizon):
         x = env.context(t)
@@ -52,8 +35,6 @@ def run_policy(env: BanditEnv, policy) -> np.ndarray:
 
 
 def best_fixed_arm_regret(env: BanditEnv) -> np.ndarray:
-    """Reference: always play the arm with the best average p in hindsight (non-contextual
-    optimum). A context-free policy cannot beat it; a contextual one must, to justify itself."""
     best = env.probs.mean(axis=0).argmax()
     return np.cumsum(env.probs.max(axis=1) - env.probs[:, best])
 
@@ -90,7 +71,7 @@ def write_csv(path, rows: list[dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Run bandit policies")
     parser.add_argument("--horizon", type=int, default=HORIZON)
     args = parser.parse_args()
     start = time.perf_counter()
@@ -121,8 +102,6 @@ def main() -> None:
         v = np.array(v)
         print(f"  {name:15s} {v.mean():7.1f} +/- {v.std(ddof=1):5.1f}   per round "
               f"{v.mean() / args.horizon:.4f}")
-    # linear growth check: regret per round in the last quarter vs the first quarter, from the
-    # full curves (the csv only keeps every LOG_EVERY-th round)
     q = args.horizon // 4
     for name in ("random", "linucb", "linear-ts", "neural-linear"):
         c = np.array(full[name])

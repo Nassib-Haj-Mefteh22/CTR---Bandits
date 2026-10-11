@@ -12,7 +12,6 @@ def _random_batch(n: int, n_ids: int, seed: int = 0):
     return torch.randn(n, 26, generator=g), torch.randint(0, n_ids, (n, 26), generator=g)
 
 
-# --- 4.1 DCN-v2 --------------------------------------------------------------------------------
 def test_cross_layer_with_zero_weights_is_identity():
     layer = CrossLayer(12)
     nn.init.zeros_(layer.linear.weight)
@@ -31,7 +30,6 @@ def test_cross_layer_matches_formula():
 
 
 def test_stacked_cross_layers_raise_polynomial_degree():
-    """d = 1, W = w, b = 0: one layer gives w t^2 + t, two layers give a degree-3 polynomial."""
     layers = [CrossLayer(1), CrossLayer(1)]
     for layer, w in zip(layers, (2.0, 3.0), strict=True):
         nn.init.constant_(layer.linear.weight, w)
@@ -39,7 +37,7 @@ def test_stacked_cross_layers_raise_polynomial_degree():
     t = torch.linspace(-2, 2, 7).unsqueeze(1)
     x1 = layers[0](t, t)
     torch.testing.assert_close(x1, 2 * t**2 + t)
-    x2 = layers[1](t, x1)  # t * 3 * (2t^2 + t) + (2t^2 + t) = 6t^3 + 5t^2 + t
+    x2 = layers[1](t, x1)
     torch.testing.assert_close(x2, 6 * t**3 + 5 * t**2 + t)
 
 
@@ -63,13 +61,12 @@ def test_dcnv2_zero_cross_weights_reduces_to_embedding_plus_mlp():
     torch.testing.assert_close(model(dense, sparse), model.head(model.deep(x0)).squeeze(1))
 
 
-# --- 4.3 hash-size ablation --------------------------------------------------------------------
 def test_rehash_keeps_reserved_ids_and_stays_in_range():
     ids = np.array([[0, 25, 26, 51, 52, 2**20 - 1, 2**18 + 7]])
     out = rehash_ids(ids, 2**18)
-    assert out[0, :4].tolist() == [0, 25, 26, 51]  # missing / rare ids untouched
+    assert out[0, :4].tolist() == [0, 25, 26, 51]
     assert out[0, 4] == 52 and out.min() >= 0 and out.max() < 2**18
-    assert (out[0, 4:] >= 52).all()  # real values never fold onto a reserved id
+    assert (out[0, 4:] >= 52).all()
 
 
 def test_build_model_passes_only_relevant_knobs():

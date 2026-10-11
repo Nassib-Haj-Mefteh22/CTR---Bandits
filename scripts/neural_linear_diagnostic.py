@@ -1,15 +1,3 @@
-"""Step 7 diagnostic: why NeuralLinear loses to linear policies on the Criteo bandit.
-
-1. Variance split of the true p on seed-0 rounds: user part (mean over arms, the same for every
-   ad), arm part (deviation of each arm from that mean), and Bernoulli noise p(1-p).
-2. Representation quality: after a full 100k-round run on seed 0, play greedily on the posterior
-   MEAN (no exploration) over 20k seed-1 rounds, with NeuralLinear's learned phi vs LinearTS's raw
-   features. Same Bayesian layer, only the features differ.
-Seed 0 is the tuning seed: the reported seeds 1-5 of bandit.run are never used here.
-
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe scripts/neural_linear_diagnostic.py
-"""
-
 import numpy as np
 
 from bandit.policies import LinearTS, NeuralLinear

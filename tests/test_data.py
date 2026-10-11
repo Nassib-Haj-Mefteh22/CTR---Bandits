@@ -24,13 +24,13 @@ def test_hash_is_deterministic_and_in_range():
     raw = rng.integers(0, 2**32, size=(1000, 26), dtype=np.int64)
     a, b = hash_sparse(raw, hash_size=1000), hash_sparse(raw.copy(), hash_size=1000)
     assert np.array_equal(a, b)
-    assert a.min() >= 52 and a.max() < 1000  # real values never use the reserved ids 0..51
+    assert a.min() >= 52 and a.max() < 1000
 
 
 def test_same_value_in_different_fields_gets_different_ids():
     raw = np.full((1, 26), 12345, dtype=np.int64)
     ids = hash_sparse(raw)
-    assert len(set(ids[0].tolist())) > 20  # almost surely all distinct; collisions are rare
+    assert len(set(ids[0].tolist())) > 20
 
 
 def test_missing_gets_reserved_field_id():
@@ -56,7 +56,7 @@ def test_standardize_uses_train_stats_only():
     test = np.array([[100.0]], dtype=np.float32)
     (tr, te), mean, std = standardize([train, test])
     assert mean[0] == 1.0 and std[0] == 1.0
-    assert te[0, 0] == 99.0  # test was NOT used to compute mean/std
+    assert te[0, 0] == 99.0
 
 
 def test_loader_yields_full_batches_with_right_dtypes():
@@ -71,13 +71,13 @@ def test_loader_yields_full_batches_with_right_dtypes():
 
 
 def test_rare_values_fitted_on_train_map_to_field_rare_id():
-    train = np.array([[5, 7]] * 10 + [[6, 7]], dtype=np.int64)  # 5 and 7 frequent, 6 rare
+    train = np.array([[5, 7]] * 10 + [[6, 7]], dtype=np.int64)
     frequent = frequent_values(train, min_count=10)
-    new = np.array([[5, 9], [6, -1]], dtype=np.int64)  # 9 unseen in train, -1 missing
+    new = np.array([[5, 9], [6, -1]], dtype=np.int64)
     mask = rare_mask(new, frequent)
     assert mask.tolist() == [[False, True], [True, False]]
     ids = hash_sparse(new, mask)
-    assert ids[0, 0] >= 4  # frequent value: hashed (2 fields -> 4 reserved ids)
-    assert ids[0, 1] == 2 + 1  # rare in field 1 -> n_fields + 1
-    assert ids[1, 0] == 2 + 0  # rare in field 0
-    assert ids[1, 1] == 1  # missing in field 1 -> 1
+    assert ids[0, 0] >= 4
+    assert ids[0, 1] == 2 + 1
+    assert ids[1, 0] == 2 + 0
+    assert ids[1, 1] == 1

@@ -1,20 +1,11 @@
-"""Step 7.2: cumulative regret curves (mean +/- 1 std over the 5 eval seeds) and final table.
-
-Reads results/bandit_regret.csv (written by `python -m bandit.run`), writes
-results/figures/regret.png and results/bandit_final.csv.
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe scripts/plot_regret.py
-"""
-
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import pandas as pd
 
-from ctr.config import FIGURES_DIR, RESULTS_DIR  # noqa: E402
+from ctr.config import FIGURES_DIR, RESULTS_DIR
 
-# learners take categorical slots 1-4 in fixed order (validated palette); the two references
-# (random, best fixed arm) stay neutral gray so the eye goes to the learners
 STYLE = {
     "random": ("#7b8794", "-", "random"),
     "best-fixed-arm": ("#7b8794", "--", "best fixed arm (hindsight)"),
@@ -39,14 +30,13 @@ def main() -> None:
     ink, muted, grid = "#1f2933", "#52606d", "#e4e7eb"
     fig, ax = plt.subplots(figsize=(8, 4.8))
     ends: list[tuple[float, str]] = []
-    for policy in final.index:  # draw worst first so the best curves sit on top
+    for policy in final.index:
         color, ls, label = STYLE[policy]
         s = stats[stats["policy"] == policy]
         ax.fill_between(s["t"], s["mean"] - s["std"], s["mean"] + s["std"], color=color,
                         alpha=0.18, lw=0)
         ax.plot(s["t"], s["mean"], color=color, ls=ls, lw=2, label=label)
         ends.append((s["mean"].iloc[-1], f"{label}  {s['mean'].iloc[-1]:,.0f}"))
-    # end labels, pushed apart vertically so close curves (Linear TS vs fixed arm) stay legible
     min_gap = 0.035 * stats["mean"].max()
     placed: list[float] = []
     for y, text in sorted(ends):
@@ -63,7 +53,7 @@ def main() -> None:
     ax.tick_params(colors=muted)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
-    ax.set_xlim(0, horizon * 1.32)  # room for the end labels
+    ax.set_xlim(0, horizon * 1.32)
     ax.set_xticks(range(0, horizon + 1, horizon // 5))
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(handles[::-1], labels[::-1], frameon=False, fontsize=8, loc="upper left")

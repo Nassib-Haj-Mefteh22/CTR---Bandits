@@ -1,35 +1,19 @@
-"""Calibration: does p = 0.3 mean "30% of these rows are clicked"? Measure it, then fix it.
-
-ECE (expected calibration error): sort predictions into 15 equal-width bins of p, and in each bin
-compare the mean prediction (confidence) with the observed click rate (accuracy); ECE is the
-row-weighted mean gap. For binary CTR we bin p(click) itself, not max(p, 1-p) as in the
-multi-class version of Guo et al. 2017, because the bidder consumes p(click).
-
-Fixes, both fitted on VAL logits z only (test stays untouched), both monotonic in z, so the
-ORDER of rows and therefore the AUC cannot change:
-- temperature scaling: p = sigmoid(z / T), one parameter (Guo et al. 2017);
-- Platt scaling (extra, for comparison): p = sigmoid(a z + b). The bias b can also correct a
-  global shift, which T alone cannot (T only stretches logits around z = 0, i.e. p = 0.5).
-
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe -m ctr.calibrate --model dcnv2
-"""
-
 import argparse
 import csv
 
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-from torch import nn  # noqa: E402
-from torch.utils.data import DataLoader  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
 
-from ctr.config import FIGURES_DIR, RESULTS_DIR, SEED  # noqa: E402
-from ctr.data import CTRDataset, load_split, make_loader  # noqa: E402
-from ctr.metrics import ctr_metrics  # noqa: E402
-from ctr.train import CHECKPOINT_DIR, ModelConfig, build_model  # noqa: E402
+from ctr.config import FIGURES_DIR, RESULTS_DIR, SEED
+from ctr.data import CTRDataset, load_split, make_loader
+from ctr.metrics import ctr_metrics
+from ctr.train import CHECKPOINT_DIR, ModelConfig, build_model
 
 N_BINS = 15
 CALIBRATION_CSV = RESULTS_DIR / "calibration.csv"
@@ -38,11 +22,6 @@ CALIBRATION_CSV = RESULTS_DIR / "calibration.csv"
 def reliability_bins(
     y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = N_BINS
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Per equal-width bin of p: (mean prediction, observed click rate, row count).
-
-    Empty bins get NaN means and count 0, so they weigh nothing in the ECE.
-    """
-    # bin index 0..n_bins-1; p = 1.0 goes into the last bin instead of an extra one
     idx = np.minimum((y_prob * n_bins).astype(np.int64), n_bins - 1)
     count = np.bincount(idx, minlength=n_bins).astype(np.float64)
     sum_p = np.bincount(idx, weights=y_prob, minlength=n_bins)
@@ -52,14 +31,12 @@ def reliability_bins(
 
 
 def ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = N_BINS) -> float:
-    """sum_b (n_b / N) |mean p in b - click rate in b|; 0 = perfectly calibrated."""
     conf, acc, count = reliability_bins(y_true, y_prob, n_bins)
     keep = count > 0
     return float(np.sum(count[keep] / count.sum() * np.abs(conf[keep] - acc[keep])))
 
 
 def _fit(logits: np.ndarray, labels: np.ndarray, params: list[torch.Tensor], transform) -> None:
-    """Minimize BCE of transform(z) over `params` with LBFGS (full batch: 300k scalars)."""
     z = torch.from_numpy(logits.astype(np.float64))
     y = torch.from_numpy(labels.astype(np.float64))
     optimizer = torch.optim.LBFGS(params, lr=0.1, max_iter=200, line_search_fn="strong_wolfe")
@@ -75,14 +52,12 @@ def _fit(logits: np.ndarray, labels: np.ndarray, params: list[torch.Tensor], tra
 
 
 def fit_temperature(logits: np.ndarray, labels: np.ndarray) -> float:
-    """T > 0 minimizing val LogLoss of sigmoid(z / T). Optimized as log T so T stays positive."""
     log_t = torch.zeros(1, dtype=torch.float64, requires_grad=True)
     _fit(logits, labels, [log_t], lambda z: z / log_t.exp())
     return float(log_t.detach().exp())
 
 
 def fit_platt(logits: np.ndarray, labels: np.ndarray) -> tuple[float, float]:
-    """(a, b) minimizing val LogLoss of sigmoid(a z + b); starts at the identity a=1, b=0."""
     a = torch.ones(1, dtype=torch.float64, requires_grad=True)
     b = torch.zeros(1, dtype=torch.float64, requires_grad=True)
     _fit(logits, labels, [a, b], lambda z: a * z + b)
@@ -95,7 +70,6 @@ def sigmoid(z: np.ndarray) -> np.ndarray:
 
 @torch.no_grad()
 def predict_logits(model: nn.Module, loader: DataLoader) -> tuple[np.ndarray, np.ndarray]:
-    """(labels, raw logits): calibration maps act on logits, not on probabilities."""
     model.eval()
     labels, logits = [], []
     for dense, sparse, label in loader:
@@ -112,7 +86,6 @@ def load_trained(name: str, seed: int, mcfg: ModelConfig) -> nn.Module:
 
 
 def platt_params(model: str = "dcnv2", seed: int = SEED) -> tuple[float, float]:
-    """(a, b) fitted on val by main(), read back from results/calibration.csv."""
     with CALIBRATION_CSV.open(encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if row["model"] == model and row["seed"] == str(seed) and row["method"] == "platt":
@@ -126,7 +99,6 @@ def evaluate(y: np.ndarray, p: np.ndarray) -> dict[str, float]:
 
 
 def calibrate_one(name: str, seed: int) -> tuple[list[dict], dict[str, np.ndarray], np.ndarray]:
-    """Fit T and (a, b) on val for one trained model; return csv rows + test probabilities."""
     model = load_trained(name, seed, ModelConfig())
     loaders = {s: make_loader(CTRDataset(*load_split(s)), 65536, shuffle=False)
                for s in ("val", "test")}
@@ -157,11 +129,6 @@ def calibrate_one(name: str, seed: int) -> tuple[list[dict], dict[str, np.ndarra
 
 
 def plot_reliability(y: np.ndarray, probs: dict[str, np.ndarray], title: str) -> None:
-    """Reliability diagram, the gap (observed - predicted) per bin, and the histogram of p.
-
-    Why a gap panel: on a 0-1 axis, errors of ~0.01 are invisible and every method sits on the
-    diagonal; plotting the gap itself makes over/under-prediction readable.
-    """
     style = {"uncalibrated": ("#7b8794", "o", "-"), "temperature": ("#2563eb", "s", "-"),
              "platt": ("#d97706", "^", "--")}
     ink, grid = "#1f2933", "#e4e7eb"
@@ -172,7 +139,7 @@ def plot_reliability(y: np.ndarray, probs: dict[str, np.ndarray], title: str) ->
     for method, p in probs.items():
         color, marker, ls = style[method]
         conf, acc, count = reliability_bins(y, p)
-        keep = count >= 100  # bins with < 100 rows are too noisy to read
+        keep = count >= 100
         kw = {"color": color, "marker": marker, "ms": 6, "lw": 2, "ls": ls}
         ax.plot(conf[keep], acc[keep], label=f"{method} (ECE {ece(y, p):.4f})", **kw)
         gap.plot(conf[keep], acc[keep] - conf[keep], **kw)
@@ -198,7 +165,7 @@ def plot_reliability(y: np.ndarray, probs: dict[str, np.ndarray], title: str) ->
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Calibrate a trained CTR model")
     parser.add_argument("--model", default="dcnv2")
     parser.add_argument("--seeds", type=int, nargs="+", default=[SEED, SEED + 1, SEED + 2])
     args = parser.parse_args()

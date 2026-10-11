@@ -1,5 +1,3 @@
-# Direct dependencies only, pinned to the versions tested on Python 3.12 (CPU).
-# Install: .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 torch==2.14.1
 numpy==2.5.3
 pandas==3.0.6

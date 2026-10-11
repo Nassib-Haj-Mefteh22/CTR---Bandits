@@ -1,11 +1,3 @@
-"""Step 4.3 ablations: change ONE knob of the best model at a time, then repeat the best config
-over extra seeds. Each run appends one row to results/ablations.csv (resumable: runs already in
-the csv are skipped), then a summary table and results/figures/ablations.png are written.
-
-Run:  $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe scripts/ablate.py --model dcnv2
-      add --plot-only to redraw the table and figure from the csv without training.
-"""
-
 import argparse
 import csv
 from dataclasses import asdict, replace
@@ -13,11 +5,11 @@ from dataclasses import asdict, replace
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import pandas as pd
 
-from ctr.config import FIGURES_DIR, RESULTS_DIR, SEED  # noqa: E402
-from ctr.train import (  # noqa: E402
+from ctr.config import FIGURES_DIR, RESULTS_DIR, SEED
+from ctr.train import (
     METRICS_CSV,
     ModelConfig,
     TrainConfig,
@@ -27,24 +19,21 @@ from ctr.train import (  # noqa: E402
 
 ABLATIONS_CSV = RESULTS_DIR / "ablations.csv"
 GRID: dict[str, list[int]] = {
-    "embed_dim": [8, 16],  # k=32 dropped: ~45 CPU min for one point (sprint budget)
+    "embed_dim": [8, 16],
     "n_cross": [1, 2, 3],
     "hash_size": [2**18, 2**20],
 }
 EXTRA_SEEDS = [SEED + 1, SEED + 2]
-# Every embedding model so far peaked at epoch 2 and got worse at 3: patience 1 stops one epoch
-# earlier and selects the SAME best epoch, saving ~25% of CPU time.
 PATIENCE = 1
 LABELS = {"embed_dim": "embedding dim k", "n_cross": "cross layers", "hash_size": "hash size"}
 
 
 def planned_runs(model: str) -> list[tuple[str, ModelConfig, int]]:
-    """(varied knob, config, seed) for every run; 'baseline' = all defaults, seed 42."""
     base = ModelConfig()
     runs = [("baseline", base, SEED)]
     for knob, values in GRID.items():
         if knob == "n_cross" and model != "dcnv2":
-            continue  # only DCN-v2 has cross layers
+            continue
         for value in values:
             if value != getattr(base, knob):
                 runs.append((knob, replace(base, **{knob: value}), SEED))
@@ -65,8 +54,6 @@ def key(model: str, mcfg: ModelConfig, seed: int) -> tuple:
 
 
 def copy_baseline(model: str) -> bool:
-    """Reuse the main-table run (same defaults, seed 42) as the baseline row instead of
-    retraining it: same code, same seed, so a rerun would only cost ~18 CPU minutes."""
     with METRICS_CSV.open(encoding="utf-8") as f:
         rows = [r for r in csv.DictReader(f) if r["model"] == model and r["seed"] == str(SEED)]
     if not rows:
@@ -90,7 +77,6 @@ def train_all(model: str) -> None:
 
 
 def summarize(model: str) -> pd.DataFrame:
-    """Print the one-knob table and the seed mean +/- std; return the rows of this model."""
     df = pd.read_csv(ABLATIONS_CSV)
     df = df[df["model"] == model]
     cols = ["varied", "embed_dim", "n_cross", "hash_size", "seed", "best_epoch",
@@ -106,7 +92,6 @@ def summarize(model: str) -> pd.DataFrame:
 
 
 def plot(df: pd.DataFrame, model: str) -> None:
-    """One small panel per knob (one series each): test AUC vs value, seed spread on baseline."""
     base = ModelConfig()
     knobs = [k for k in GRID if df[k].nunique() > 1]
     seeds = df[(df["embed_dim"] == base.embed_dim) & (df["n_cross"] == base.n_cross)
@@ -125,7 +110,7 @@ def plot(df: pd.DataFrame, model: str) -> None:
         for xi, (value, auc) in zip(x, zip(rows[knob], rows["test_auc"], strict=True),
                                     strict=True):
             is_base = value == getattr(base, knob)
-            if is_base and std > 0:  # +/- 1 std over seeds: differences smaller are noise
+            if is_base and std > 0:
                 ax.errorbar(xi, auc, yerr=std, color=ink, capsize=4, lw=1, zorder=2)
             ax.annotate(f"{auc:.4f}", (xi, auc), textcoords="offset points", xytext=(0, 10),
                         ha="center", fontsize=8, color=ink if is_base else muted)
@@ -149,7 +134,7 @@ def plot(df: pd.DataFrame, model: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="DCN-v2 ablations")
     parser.add_argument("--model", default="dcnv2")
     parser.add_argument("--plot-only", action="store_true")
     args = parser.parse_args()

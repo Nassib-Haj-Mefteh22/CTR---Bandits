@@ -9,3 +9,8 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/ablate.py" = ["E402"]
+"scripts/plot_regret.py" = ["E402"]
+"src/ctr/calibrate.py" = ["E402"]

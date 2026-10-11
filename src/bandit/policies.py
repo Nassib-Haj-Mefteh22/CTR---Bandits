@@ -1,24 +1,9 @@
-"""Bandit policies with one interface: select(x) -> arm, then update(x, arm, reward).
-
-- Random: lower reference, regret grows linearly at the average gap.
-- Epsilon-greedy on per-arm click means: ignores the context, so at best it converges to the
-  best FIXED arm; its regret against the contextual oracle can never go below that arm's gap.
-- LinUCB (Li et al. 2010, disjoint): one ridge regression per arm, theta_a = A_a^{-1} b_a, play
-  argmax theta_a . x + alpha * sqrt(x^T A_a^{-1} x). The second term is the width of the
-  confidence interval: arms whose estimate is uncertain FOR THIS x get explored.
-- LinearTS / NeuralLinear (Riquelme, Tucker, Snoek 2018): Thompson sampling with a Bayesian
-  linear regression per arm (Normal-Inverse-Gamma prior), on the raw features (LinearTS) or on
-  the last hidden layer of an MLP retrained every M rounds (NeuralLinear). Exploration comes from
-  sampling the weights from their posterior instead of adding a bonus.
-"""
-
 import numpy as np
 import torch
 from torch import nn
 
 
 def argmax_random_tie(values: np.ndarray, rng: np.random.Generator) -> int:
-    """argmax that breaks ties at random; plain argmax would always favor arm 0 at the start."""
     best = np.flatnonzero(values == values.max())
     return int(best[0] if len(best) == 1 else rng.choice(best))
 
@@ -38,8 +23,6 @@ class RandomPolicy:
 
 
 class EpsilonGreedy:
-    """With prob. eps play a random arm, otherwise the arm with the best empirical click rate."""
-
     name = "eps-greedy"
 
     def __init__(self, n_arms: int, seed: int, eps: float = 0.05) -> None:
@@ -51,7 +34,6 @@ class EpsilonGreedy:
     def select(self, x: np.ndarray) -> int:
         if self.rng.random() < self.eps:
             return int(self.rng.integers(len(self.counts)))
-        # untried arms get +inf so each arm is played at least once
         means = np.where(self.counts > 0, self.sums / np.maximum(self.counts, 1), np.inf)
         return argmax_random_tie(means, self.rng)
 
@@ -61,45 +43,30 @@ class EpsilonGreedy:
 
 
 class LinUCB:
-    """Disjoint LinUCB with A^{-1} kept up to date by Sherman-Morrison: O(d^2) per update
-    instead of O(d^3) for re-inverting A."""
-
     name = "linucb"
 
     def __init__(self, n_arms: int, dim: int, seed: int, alpha: float = 0.25,
                  lam: float = 1.0) -> None:
         self.alpha = alpha
         self.rng = np.random.default_rng(seed)
-        self.a_inv = np.tile(np.eye(dim) / lam, (n_arms, 1, 1))  # A = lam * I at start
+        self.a_inv = np.tile(np.eye(dim) / lam, (n_arms, 1, 1))
         self.b = np.zeros((n_arms, dim))
 
     def scores(self, x: np.ndarray) -> np.ndarray:
-        theta = np.einsum("kij,kj->ki", self.a_inv, self.b)  # [K, d]
-        width = np.sqrt(np.einsum("i,kij,j->k", x, self.a_inv, x))  # sqrt(x^T A^-1 x) per arm
+        theta = np.einsum("kij,kj->ki", self.a_inv, self.b)
+        width = np.sqrt(np.einsum("i,kij,j->k", x, self.a_inv, x))
         return theta @ x + self.alpha * width
 
     def select(self, x: np.ndarray) -> int:
         return argmax_random_tie(self.scores(x), self.rng)
 
     def update(self, x: np.ndarray, arm: int, reward: float) -> None:
-        # (A + x x^T)^{-1} = A^{-1} - (A^{-1} x)(A^{-1} x)^T / (1 + x^T A^{-1} x)
         a_inv_x = self.a_inv[arm] @ x
         self.a_inv[arm] -= np.outer(a_inv_x, a_inv_x) / (1.0 + x @ a_inv_x)
         self.b[arm] += reward * x
 
 
 class BayesLinear:
-    """Per-arm Bayesian linear regression r = beta . phi + noise, noise ~ N(0, sigma^2), with the
-    conjugate Normal-Inverse-Gamma prior beta | sigma^2 ~ N(0, sigma^2 / lam I),
-    sigma^2 ~ InvGamma(a0, b0).
-
-    Posterior after n points (Phi, r): precision P = lam I + Phi^T Phi, mean mu = P^{-1} Phi^T r,
-    a = a0 + n / 2, b = b0 + (r^T r - mu^T P mu) / 2. Thompson draw: sigma^2 ~ InvGamma(a, b),
-    beta ~ N(mu, sigma^2 P^{-1}). Why learn sigma^2 instead of fixing it: the reward noise scale
-    sets how wide the samples are, so exploration adapts to the data. a0 = 6, b0 = 1 puts the prior
-    mean of sigma^2 at b0 / (a0 - 1) = 0.2, close to the Bernoulli variance p(1-p) at p ~ 0.27.
-    """
-
     def __init__(self, n_arms: int, dim: int, lam: float = 1.0, a0: float = 6.0,
                  b0: float = 1.0) -> None:
         self.lam, self.a0, self.b0 = lam, a0, b0
@@ -113,12 +80,12 @@ class BayesLinear:
         self.yty = np.zeros(k)
         self.n = np.zeros(k)
         self.mu = np.zeros((k, d))
-        self.chol_cov = np.tile(np.eye(d) / np.sqrt(self.lam), (k, 1, 1))  # chol(P^{-1})
+        self.chol_cov = np.tile(np.eye(d) / np.sqrt(self.lam), (k, 1, 1))
         self.b = np.full(k, self.b0)
 
     def _refresh(self, arm: int) -> None:
         cov = np.linalg.inv(self.precision[arm])
-        cov = 0.5 * (cov + cov.T)  # remove round-off asymmetry before Cholesky
+        cov = 0.5 * (cov + cov.T)
         self.mu[arm] = cov @ self.xty[arm]
         self.chol_cov[arm] = np.linalg.cholesky(cov)
         quad = self.mu[arm] @ self.precision[arm] @ self.mu[arm]
@@ -132,7 +99,6 @@ class BayesLinear:
         self._refresh(arm)
 
     def rebuild(self, arms: np.ndarray, phis: np.ndarray, rewards: np.ndarray) -> None:
-        """Recompute every arm's posterior from scratch (after the representation changed)."""
         self.reset()
         for arm in range(self.n_arms):
             mask = arms == arm
@@ -145,16 +111,13 @@ class BayesLinear:
 
     def sample_scores(self, phi: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         a = self.a0 + self.n / 2
-        sigma2 = self.b / rng.gamma(a)  # InvGamma(a, b) = b / Gamma(a, 1)
+        sigma2 = self.b / rng.gamma(a)
         z = rng.standard_normal((self.n_arms, self.dim))
         beta = self.mu + np.sqrt(sigma2)[:, None] * np.einsum("kij,kj->ki", self.chol_cov, z)
         return beta @ phi
 
 
 class LinearTS:
-    """Thompson sampling with BayesLinear on the raw context: NeuralLinear without the network,
-    so NeuralLinear - LinearTS isolates what the learned representation adds."""
-
     name = "linear-ts"
 
     def __init__(self, n_arms: int, dim: int, seed: int) -> None:
@@ -169,15 +132,6 @@ class LinearTS:
 
 
 class NeuralLinear:
-    """MLP x -> phi(x) (last hidden layer) -> one output per arm, trained with MSE on the played
-    arm's reward only; Thompson sampling with BayesLinear on [phi(x), 1].
-
-    Every `retrain_every` rounds: `steps` Adam steps on minibatches from the whole history (warm
-    start from the current weights), then phi is recomputed for ALL past rounds and the posteriors
-    are rebuilt, because the old phi vectors no longer match the new network. Between retrains
-    the network is frozen and runs in NumPy (a torch call per round would dominate the run time).
-    """
-
     name = "neural-linear"
 
     def __init__(self, n_arms: int, dim: int, seed: int, hidden: tuple[int, int] = (64, 32),
@@ -199,12 +153,10 @@ class NeuralLinear:
         self._export()
 
     def _export(self) -> None:
-        """Copy the frozen body to NumPy weights for the per-round forward pass."""
         self.w = [(m.weight.detach().double().numpy().T.copy(), m.bias.detach().double().numpy())
                   for m in self.body if isinstance(m, nn.Linear)]
 
     def features(self, x: np.ndarray) -> np.ndarray:
-        """phi(x) with a constant 1 appended (per-arm intercept); x [d] or [n, d]."""
         h = x
         for w, b in self.w:
             h = np.maximum(h @ w + b, 0.0)

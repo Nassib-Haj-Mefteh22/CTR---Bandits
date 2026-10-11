@@ -1,12 +1,3 @@
-"""One training loop shared by every CTR model, so comparisons differ only by the model.
-
-Loop: Adam on BCEWithLogitsLoss -> after each epoch, LogLoss on VAL -> keep the best weights ->
-stop after `patience` epochs without improvement -> reload best weights -> score TEST once ->
-append one row to results/metrics.csv.
-
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe -m ctr.train --model logreg
-"""
-
 import argparse
 import csv
 import random
@@ -28,7 +19,7 @@ from ctr.models.deepfm import DeepFM
 from ctr.models.fm import FM
 from ctr.models.logreg import LogisticRegression
 
-CHECKPOINT_DIR = DATA_DIR / "checkpoints"  # under data/: gitignored, weights are never committed
+CHECKPOINT_DIR = DATA_DIR / "checkpoints"
 METRICS_CSV = RESULTS_DIR / "metrics.csv"
 MODELS: dict[str, Callable[..., nn.Module]] = {
     "logreg": LogisticRegression,
@@ -40,19 +31,15 @@ MODELS: dict[str, Callable[..., nn.Module]] = {
 
 @dataclass
 class ModelConfig:
-    """Architecture knobs varied by the Step 4 ablations; defaults = the main-table models."""
-
     embed_dim: int = EMBED_DIM
     n_cross: int = N_CROSS
     hash_size: int = HASH_SIZE
 
     def tag(self) -> str:
-        """Short id for checkpoint names, so ablation runs do not overwrite each other."""
         return f"k{self.embed_dim}_c{self.n_cross}_h{self.hash_size.bit_length() - 1}"
 
 
 def build_model(name: str, mcfg: ModelConfig) -> nn.Module:
-    """Pass each model only the knobs it has (LR has no embeddings, only DCN-v2 has crosses)."""
     kwargs: dict = {"n_ids": mcfg.hash_size}
     if name != "logreg":
         kwargs["embed_dim"] = mcfg.embed_dim
@@ -63,13 +50,11 @@ def build_model(name: str, mcfg: ModelConfig) -> nn.Module:
 
 @dataclass
 class TrainConfig:
-    """Everything that defines a run besides the model; written to metrics.csv with the result."""
-
     epochs: int = 10
     batch_size: int = 4096
     lr: float = 1e-3
     weight_decay: float = 0.0
-    patience: int = 2  # epochs without val improvement before stopping
+    patience: int = 2
     seed: int = SEED
 
 
@@ -81,7 +66,6 @@ class TrainResult:
 
 
 def set_seed(seed: int) -> None:
-    """Fix every RNG that touches training (init, shuffling) so a run is reproducible."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -89,7 +73,6 @@ def set_seed(seed: int) -> None:
 
 @torch.no_grad()
 def predict(model: nn.Module, loader: DataLoader) -> tuple[np.ndarray, np.ndarray]:
-    """(labels, predicted probabilities) over a whole loader, in eval mode (dropout off)."""
     model.eval()
     labels, probs = [], []
     for dense, sparse, label in loader:
@@ -101,7 +84,6 @@ def predict(model: nn.Module, loader: DataLoader) -> tuple[np.ndarray, np.ndarra
 def train_one_epoch(
     model: nn.Module, loader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: nn.Module
 ) -> float:
-    """One pass over the training data; returns the mean training loss of the epoch."""
     model.train()
     total, n = 0.0, 0
     for dense, sparse, label in loader:
@@ -121,12 +103,6 @@ def fit(
     cfg: TrainConfig,
     checkpoint: Path,
 ) -> TrainResult:
-    """Train with early stopping on val LogLoss; leaves the BEST weights loaded in `model`.
-
-    Why select on val LogLoss rather than AUC: LogLoss is the training objective and also
-    rewards calibrated probabilities, which the bandit simulator will consume later.
-    """
-    # BCEWithLogitsLoss = sigmoid + binary cross-entropy fused, numerically stable for big logits.
     loss_fn = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +134,6 @@ def fit(
 
 
 def append_metrics_row(row: dict, path: Path = METRICS_CSV) -> None:
-    """Append one run to metrics.csv (header written on first use). One row = one model x seed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as f:
@@ -176,15 +151,10 @@ def run(
     csv_path: Path = METRICS_CSV,
     extra: dict | None = None,
 ) -> dict:
-    """Full experiment for one model: data -> fit -> (final only) test metrics + metrics.csv row.
-
-    Why test only when final: tuning runs (lr, epochs...) must be judged on VAL. Printing test
-    scores while tuning invites choosing settings on test, which makes the test number optimistic.
-    """
     mcfg = mcfg or ModelConfig()
     set_seed(cfg.seed)
     splits = [load_split(s) for s in ("train", "val", "test")]
-    if mcfg.hash_size != HASH_SIZE:  # smaller table: fold the stored ids, no re-preprocessing
+    if mcfg.hash_size != HASH_SIZE:
         splits = [(d, rehash_ids(sp, mcfg.hash_size), y) for d, sp, y in splits]
     train_ds, val_ds, test_ds = (CTRDataset(*s) for s in splits)
     train_loader = make_loader(train_ds, cfg.batch_size, shuffle=True, seed=cfg.seed)
@@ -227,7 +197,7 @@ def run(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Train a CTR model")
     parser.add_argument("--model", choices=sorted(MODELS), default="logreg")
     defaults = TrainConfig()
     for key, value in vars(defaults).items():

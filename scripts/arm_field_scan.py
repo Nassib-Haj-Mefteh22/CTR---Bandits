@@ -1,17 +1,3 @@
-"""Step 6.1 evidence: which categorical field makes a useful bandit "ad" field?
-
-For each of the 26 fields, arms = its K most frequent train values. For N val contexts, set the
-field to each arm and ask the calibrated DCN-v2 for p(click | context, arm). A good testbed needs:
-- spread: arms differ (max - min p), otherwise every policy has ~0 regret;
-- context value: mean_x max_a p(x, a) - max_a mean_x p(x, a) = per-round regret of the best FIXED
-  arm against the contextual oracle. If ~0, a non-contextual bandit is already optimal and LinUCB /
-  NeuralLinear have nothing to learn;
-- coverage: share of train rows whose value is one of the K arms (low = the model is asked about
-  combinations it rarely saw, i.e. extrapolation).
-
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe scripts/arm_field_scan.py
-"""
-
 import argparse
 import csv
 
@@ -26,7 +12,7 @@ from ctr.train import ModelConfig
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Scan fields as bandit arms")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--n", type=int, default=5000)
     args = parser.parse_args()

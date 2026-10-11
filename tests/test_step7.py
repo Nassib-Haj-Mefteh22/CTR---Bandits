@@ -6,8 +6,6 @@ from bandit.simulator import BanditEnv
 
 
 def _quadratic_toy(seed: int = 0, t: int = 4000, k: int = 4, d: int = 4) -> BanditEnv:
-    """p(x, a) = 0.1 + 0.2 (x . u_a)^2: the best arm is the direction x is most aligned with,
-    regardless of sign, which no linear function of x can represent."""
     rng = np.random.default_rng(seed)
     u = rng.normal(size=(k, d))
     u /= np.linalg.norm(u, axis=1, keepdims=True)
@@ -16,7 +14,6 @@ def _quadratic_toy(seed: int = 0, t: int = 4000, k: int = 4, d: int = 4) -> Band
     return BanditEnv.from_probs(np.hstack([x, np.ones((t, 1))]), probs, seed)
 
 
-# --- 7.1 Bayesian linear regression ------------------------------------------------------------
 def test_posterior_mean_is_ridge_and_b_matches_closed_form():
     rng = np.random.default_rng(0)
     phi, r = rng.normal(size=(50, 3)), rng.normal(size=50)
@@ -29,7 +26,7 @@ def test_posterior_mean_is_ridge_and_b_matches_closed_form():
     np.testing.assert_allclose(bayes.b[1], 1.0 + 0.5 * (r @ r - mu @ precision @ mu), atol=1e-9)
     np.testing.assert_allclose(bayes.chol_cov[1] @ bayes.chol_cov[1].T, np.linalg.inv(precision),
                                atol=1e-10)
-    assert bayes.n[0] == 0 and np.allclose(bayes.mu[0], 0)  # other arm untouched
+    assert bayes.n[0] == 0 and np.allclose(bayes.mu[0], 0)
 
 
 def test_rebuild_equals_incremental_updates():
@@ -54,7 +51,6 @@ def test_thompson_samples_concentrate_with_data():
     assert spread_after < 0.2 * spread_before
 
 
-# --- 7.1 policies on toy problems --------------------------------------------------------------
 def test_neural_linear_beats_linucb_on_a_nonlinear_toy():
     env = _quadratic_toy()
     k, d = env.n_arms, env.features.shape[1]

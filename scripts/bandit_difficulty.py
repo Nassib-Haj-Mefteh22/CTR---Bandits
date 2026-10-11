@@ -1,16 +1,3 @@
-"""Step 6 diagnostic: how hard is the Criteo bandit, independently of any exploration strategy?
-
-Fits one ridge regression per arm on the policy features with FULL information (every arm's
-outcome observed each round, so no exploration problem), on seed-0 rounds, and measures greedy
-regret on 20k seed-1 rounds:
-- on the noise-free p: what the features CAN express (approximation limit);
-- on 0/1 rewards with n samples per arm: what n noisy clicks let you learn (statistical limit).
-Then runs LinUCB for 200k rounds to see when it overtakes the best fixed arm.
-This is why the horizon is 100k and not 20k.
-
-Run: $env:PYTHONPATH="src"; .\\.venv\\Scripts\\python.exe scripts/bandit_difficulty.py
-"""
-
 import numpy as np
 
 from bandit.policies import LinUCB
