@@ -1,12 +1,13 @@
-# 🎯 CTR Prediction + Contextual Bandits on Criteo
+# CTR Prediction + Contextual Bandits on Criteo
 
 CTR models written from scratch in PyTorch (LR, FM, DeepFM, DCN-v2) on 3M rows of the Criteo
 Display Advertising data. The best one is calibrated and then used as a simulated user to compare
 bandit policies that learn which ad to show.
 
----
+**Result:** DCN-v2 reaches 0.795 test AUC (Platt scaling halves calibration error), and LinUCB beats
+the best fixed ad in hindsight over 100k simulated rounds (regret 1,959 vs 2,364).
 
-## 🚀 Features
+## Features
 
 - CTR models from scratch in PyTorch: logistic regression, FM, DeepFM, DCN-v2
 - Hashing trick, rare/missing ids, time-ordered train/val/test split
@@ -15,9 +16,7 @@ bandit policies that learn which ad to show.
 - Policies: random, epsilon-greedy, LinUCB, Linear Thompson Sampling, NeuralLinear
 - 49 unit tests
 
----
-
-## ⚙️ How it works
+## How it works
 
 ```
 Criteo rows ──► preprocessing ──► LR / FM / DeepFM / DCN-v2 ──► Platt scaling ──► p(click)
@@ -28,9 +27,7 @@ each round: user (test row) ──► policy picks 1 of 10 ads ──► click ~
 The "ads" are the 10 most frequent values of field C6. Policies don't see the true model: they
 get 32 PCA features from DeepFM embeddings.
 
----
-
-## 📊 Results
+## Results
 
 **CTR models** (test set, 300k rows)
 
@@ -68,9 +65,7 @@ Two things worth noting:
   variance depends on the ad, so the network learns "who clicks" rather than "which ad"
   (`scripts/neural_linear_diagnostic.py`). On a toy problem with a strong ad effect it wins.
 
----
-
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 ├── src/ctr/       # data, models, training loop, metrics, calibration
@@ -80,9 +75,7 @@ Two things worth noting:
 └── tests/
 ```
 
----
-
-## 🛠️ Setup
+## Setup
 
 Python 3.12, CPU only. The data is downloaded from Criteo's public release (not included here).
 
@@ -102,17 +95,13 @@ foreach ($m in "logreg", "fm", "deepfm", "dcnv2") { .\.venv\Scripts\python.exe -
 
 Training takes about 30 minutes on CPU, the bandit runs about 15.
 
----
-
-## ⚠️ Limitations
+## Limitations
 
 - The simulated users are a model, not real people.
 - Criteo features are anonymized, so treating C6 as "the ad" is an assumption.
 - One 3M-row sample out of 45M; only DCN-v2 was run on several seeds.
 - LinUCB's exploration was tuned, the Thompson policies weren't.
 
----
-
-## 📄 License
+## License
 
 [MIT](LICENSE)
