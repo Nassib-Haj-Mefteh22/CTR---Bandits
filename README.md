@@ -7,6 +7,8 @@ bandit policies that learn which ad to show.
 **Result:** DCN-v2 reaches 0.795 test AUC (Platt scaling halves calibration error), and LinUCB beats
 the best fixed ad in hindsight over 100k simulated rounds (regret 1,959 vs 2,364).
 
+**Stack:** Python · PyTorch · scikit-learn · pandas · NumPy · Matplotlib · pytest
+
 ## Features
 
 - CTR models from scratch in PyTorch: logistic regression, FM, DeepFM, DCN-v2
